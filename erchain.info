@@ -2,4 +2,5 @@ name = Entityreference chain
 description = Chaining for Entityreference
 core = 7.x
 dependencies[] = entityreference
+dependencies[] = multiple_selects
 dependencies[] = options

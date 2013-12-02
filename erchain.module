@@ -6,193 +6,194 @@
  */
 
 /**
- * Implements hook_theme().
- */
-function erchain_theme() {
-  return array(
-    'erchain_none' => array(
-      'variables' => array('option' => NULL),
-    ),
-  );
-}
-
-/**
- * Returns HTML for the label for the empty value for options that are not
- * required.
+ * Gets information to define the Entityreference chain.
  *
- * @see theme_options_none()
- */
-function theme_erchain_none($variables) {
-  $output = ($variables['option'] == 'option_none' ? t('- None -') : t('- Select a value -'));
-  return $output;
-}
-
-/**
- * Implements hook_field_widget_info().
- */
-function erchain_field_widget_info() {
-  return array(
-    'erchain' => array(
-      'label' => t('Entityreference chain'),
-      'field types' => array('entityreference'),
-    ),
-  );
-}
-
-/**
- * Implements hook_field_widget_form().
+ * @return array
+ *   An array of information about the Entityreference field hierarchy, suitable
+ *   for _erchain_faux_elements().
  *
- * We build our own widget entirely for this function, because
- * hook_field_widget_form_alter() does not give us the form object for
- * ajax-rebuilding.
+ * @todo Set options from configuration (instead of a hook), to determine the
+ *   hierarchy structure.
  */
-function erchain_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
-  // Abstract over the actual field columns, to allow different field types to
-  // reuse those widgets.
-  $value_key = key($field['columns']);
-  $type = "select";
-  $multiple = 1;
-  $required = $element['#required'];
-  $has_value = isset($items[0][$value_key]);
-  $properties = _options_properties($type, $multiple, $required, $has_value);
+function erchain_parents() {
+  return module_invoke_all('erchain_parents');
+}
 
-  // Prepare the list of options.
-  $options = _erchain_get_options($field, $instance, $properties, NULL, NULL);
+/**
+ * Implements hook_field_widget_WIDGET_TYPE_form_alter().
+ */
+function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_state, $context) {
+  // @todo Get this criteria from hook_erchain_parents().
+  if (isset($element['#field_name']) && ($element['#field_name'] == 'field_season')) {
+    $value_key = key($context['field']['columns']);
 
-  // Build on the existing element before adding our additions.
-  $widget = $element;
+    // Add faux select(s) which AJAX reload the actual Entityreference select.
+    $parents = erchain_parents();
+    $elements = _erchain_faux_elements($parents);
+    foreach ($elements as $key => $value) {
+      $parent_id = implode('__', array($value['#entity_type'], $value['#bundle'], $value['#field_name']));
+      $element[$key] = $value;
+      $element[$key] += array(
+        '#ajax' => array(
+          'callback' => 'erchain_ajax_callback',
+          'wrapper' => $value['#child'] . '-' . $context['delta'],
+          'effect' => 'fade',
+        ),
+        // Add wrapper to support chaining parents.
+        '#prefix' => '<div id="' . $parent_id . '-' . $context['delta'] . '">',
+        '#suffix' => '</div>',
+        // The target_id element has 0 weight, so we just want to be above that.
+        '#weight' => -10,
+      );
+      // Hide actual Entityreference until a selection is made.
+      // @todo this is buggy (does not trigger until an AJAX callback is made).
+      #$triggering = $element['#field_name'] . '[' . LANGUAGE_NONE . '][' . $context['delta'] . '][' . $key . ']';
+      #$element[$value_key]['#states']['invisible'][':input[name="' . $triggering . '"]'] = array('value' => '_none');
 
-  // Add faux select(s) which AJAX reload the actual Entityreference select.
-  // @todo Set default value from child selection.
-  // @todo Allow a longer chain.
-  $faux_select = array(
-    '#type' => 'select',
-    '#options' => array(1,2,3),
-    '#ajax' => array(
-      'callback' => 'erchain_ajax_callback',
-      'wrapper' => 'erchain-' . $delta,
-      'effect' => 'fade',
-    ),
-    // @todo Consider a more elegant wrapper, without breaking stored values.
-    '#prefix' => '<div class="container-inline">',
-  );
-  $element['erchain_faux_select'] = $faux_select;
+      // Get parent default value from saved child selection.
+      // @todo Do this more generically.
+      if (!empty($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id'])) {
+        $selected = node_load($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id']);
+        // Grap the first values if there are multiple.
+        $first = reset($selected->{$value['#field_name']}[LANGUAGE_NONE]);
+        $element[$key]['#default_value'] = $first['target_id'];
+      }
+    }
 
-  $widget += array(
-    '#type' => 'select',
-    '#default_value' => isset($items[$delta][$value_key]) ? $items[$delta][$value_key] : NULL,
-    '#options' => $options,
-    '#element_validate' => array('erchain_widget_validate'),
-    '#value_key' => $value_key,
-    '#properties' => $properties,
-    '#prefix' => '<div id="erchain-' . $delta . '">',
-    '#suffix' => '</div></div>',
-  );
-  $element[$value_key] = $widget;
+    // Hide actual Entityreference until a selection is made.
+    // @todo This is also buggy (when 'Add another item' is selected, the AJAX
+    //   hidden class clearing is reset too).
+    #$element[$value_key]['#attributes']['class'][] = 'js-hide';
 
-  return $element;
+    // Add an easier AJAX wrapper ID target to the actual Entityreference field.
+    $element_id = implode('__', array($element['#entity_type'], $element['#bundle'], $element['#field_name']));
+    $element[$value_key]['#prefix'] = '<div id="' . $element_id . '-' . $context['delta'] . '">';
+    $element[$value_key]['#suffix'] = '</div>';
+
+    // Display inline.
+    // @todo Consider a more elegant wrapper. Unfortunately placing the actual
+    //   Entityreference field inside a container breaks stored values (without
+    //   more acrobatics than is necessary right now).
+    $element['faux_inline_start'] = array(
+      '#markup' => '<div class="container-inline">',
+      '#weight' => -100,
+    );
+    $element['faux_inline_end'] = array(
+      '#markup' => '</div>',
+      '#weight' => 100,
+    );
+  }
 }
 
 /**
  * Ajax callback.
  */
 function erchain_ajax_callback($form, $form_state) {
+  // Find the parent element.
   $form_state['rebuild'] = TRUE;
   $parents = $form_state['triggering_element']['#array_parents'];
   array_pop($parents);
   $element = drupal_array_get_nested_value($form, $parents);
 
   // Filter the element options based on the faux selection.
-  _erchain_filter_options($form_state['triggering_element']['#value'], $element['target_id']);
+  _erchain_filter_options($form_state['triggering_element'], $element['target_id']);
+
+  // Remove the hidden class, if there are any options left.
+  // @todo Use ajax_command_invoke() jQuery removeClass().
+  $count = count($element['target_id']['#options']);
+  if (!($count == 1 && key($element['target_id']['#options']) == '_none')) {
+    if (!empty($element['target_id']['#attributes']['class'])) {
+      foreach ($element['target_id']['#attributes']['class'] as $key => $class) {
+        if ($class == 'js-hide') {
+          unset($element['target_id']['#attributes']['class'][$key]);
+        }
+      }
+    }
+  }
 
   // Explicitly return the Entityreference target_id.
   return $element['target_id'];
 }
 
 /**
- * Form element validation handler for options element.
+ * Filters Season Entityreference options by selected show.
  *
- * @see options_field_widget_validate()
+ * @param array $triggering
+ *   The trigering element array.
+ * @param array $element
+ *   By reference. The triggered element array.
  */
-function erchain_widget_validate($element, &$form_state) {
-  $properties = $element['#properties'];
-  $value = $element['#value'];
+function _erchain_filter_options($triggering, &$element) {
+  // Get default field values.
+  list($entity_type, $bundle, $field_name, $direction, $selected) = array($triggering['#entity_type'], $triggering['#bundle'], $triggering['#field_name'], $triggering['#direction'], $triggering['#value']);
 
-  if ($element['#required'] && $element['#value'] == '_none') {
-    form_error($element, t('!name field is required.', array('!name' => $element['#title'])));
+  $ids = array();
+  switch ($direction) {
+    case 'referencing':
+      // @todo limit query by the entity types / bundles which contain ER fields
+      //   who's settings allow referecing the selected entity type / bundle.
+      $query = new EntityFieldQuery();
+      $query->fieldCondition($field_name, 'target_id', $selected, '=')
+        // Run the query as user 1.
+        ->addMetaData('account', user_load(1));
+      $result = $query->execute();
+      if (isset($result[$entity_type])) {
+        $ids = array_keys($result[$entity_type]);
+      }
+      break;
+    case 'referenced':
+      // @todo Seems like a useful option for future.
+      break;
   }
 
-  if ($properties['empty_option']) {
-    if ($value == '_none') {
-      form_set_value($element, NULL, $form_state);
+  // Reduce from existing options, which already pass access checks.
+  foreach (array_keys($element['#options']) as $key) {
+    if ($key != '_none' && !in_array($key, $ids)) {
+      unset($element['#options'][$key]);
     }
   }
 }
 
 /**
- * Implements hook_field_widget_error().
- */
-function erchain_field_widget_error($element, $error, $form, &$form_state) {
-  form_error($element, $error['message']);
-}
-
-/**
- * Collects the options for a field.
- *
- * @see _options_get_options()
- */
-function _erchain_get_options($field, $instance, $properties, $entity_type, $entity) {
-  // Get the list of options.
-  $options = (array) module_invoke($field['module'], 'options_list', $field, $instance, $entity_type, $entity);
-
-  // Sanitize the options.
-  _options_prepare_options($options, $properties);
-
-  if (!$properties['optgroups']) {
-    $options = options_array_flatten($options);
-  }
-
-  if ($properties['empty_option']) {
-    $label = theme('erchain_none', array('option' => $properties['empty_option']));
-    $options = array('_none' => $label) + $options;
-  }
-
-  return $options;
-}
-
-/**
  * Gets faux form element(s).
  *
- * @todo Set options from configuration (determining the hierarchy structure).
+ * @param array $parents
+ *   An associative array of information about the hierarchy of parent
+ *   Entityreference field elements, containing:
+ *   - entity_type: The entity type containing the parent field.
+ *   - bundle: The bundle containing the parent field.
+ *   - field_name: The parent field name.
+ *   - direction: The entityreference direction. Can be:
+ *     - referencing: Limit to entities referencing the parent selection.
+ *     - referenced: Limit to entities referenced by the parent.
+ *   - child: A string representing the child field, following the pattern
+ *     ENTITY_TYPE__BUNDLE__FIELD_NAME.
+ *
+ * @return array
+ *   A keyed array of unattached (faux) parent elements in the select chain.
  *
  * @see field_ui_default_value_widget()
  */
-function _erchain_faux_element(&$element, &$form_state) {
-  $entity_type = 'node';
-  $bundle_name = 'season';
-  $field_name = 'field_show';
-  $instance = field_info_instance($entity_type, $field_name, $bundle_name);
-  $items = $instance['default_value'];
-  $field = field_info_field($field_name);
+function _erchain_faux_elements($parents) {
+  $elements = array();
 
-  $instance['required'] = FALSE;
-  $instance['description'] = '';
+  // Get parent chain.
+  foreach ($parents as $key => $parent) {
+    extract($parent);
+    $field = field_info_field($field_name);
+    $instance = field_info_instance($entity_type, $field_name, $bundle);
 
-  // Stick to an empty 'parents' on this form in order not to breaks widgets
-  // that do not use field_widget_[field|instance]() and still access
-  // $form_state['field'] directly.
-  $element['#parents'] = array();
-  
-  $faux_select = field_default_form($instance['entity_type'], NULL, $field, $instance, LANGUAGE_NONE, $items, $element, $form_state, 0);
+    // Shortcut so we can just re-use field_ui_default_value_widget().
+    $form = array();
+    $form_state = array();
+    module_load_include('inc', 'field_ui', 'field_ui.admin');
+    $element = field_ui_default_value_widget($field, $instance, $form, $form_state);
+    // Temporarily store the ER direction and child.
+    $element[$field_name][LANGUAGE_NONE]['#direction'] = $direction;
+    $element[$field_name][LANGUAGE_NONE]['#child'] = $child;
+    // Return just the element itself, without the wrapping default form markup.
+    $elements[$key] = $element[$field_name][LANGUAGE_NONE];
+  }
 
-  return $faux_select;
-}
-
-/**
- * Gets faux erchain select options.
- */
-function _erchain_filter_options($selection, &$element) {
-  // Get default field values.
-  
-
+  return $elements;
 }
