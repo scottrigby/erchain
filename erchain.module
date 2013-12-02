@@ -16,12 +16,18 @@
  *   hierarchy structure.
  */
 function erchain_parents($instance) {
-  dpm($instance);
-  #return module_invoke_all('erchain_parents');
-
   $parents = array();
 
   if (isset($instance['erchain_parent'])) {
+    // Add child ID for convenience.
+    $id = implode('__', array($instance['entity_type'], $instance['bundle'], $instance['field_name']));
+    // @todo Add direction configuration once we support 'referencing'. For now
+    //   set this option explicitly.
+    $direction = isset($instance['erchain_parent']['direction']) ? $instance['erchain_parent']['direction'] : 'referenced';
+    $instance['erchain_parent'] += array(
+      'child' => $id,
+      'direction' => $direction,
+    );
     $parents[] = $instance['erchain_parent'];
 
     // Get parents.
@@ -33,7 +39,7 @@ function erchain_parents($instance) {
       array_unshift($parents, $parent);
     }
   }
-dpm($parents);
+
   return $parents;
 }
 
@@ -164,7 +170,7 @@ function erchain_field_ui_field_edit_form_ajax_callback($form, $form_state) {
  * Implements hook_field_widget_WIDGET_TYPE_form_alter().
  */
 function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_state, $context) {
-  $parents = erchain_parents($context);
+  $parents = erchain_parents($context['instance']);
   foreach ($parents as $parent_info) {
     foreach (array('entity_type', 'bundle', 'field_name') as $key) {
       // All criteria must match.
@@ -321,50 +327,6 @@ function _erchain_filter_options($triggering, &$element) {
  *     ENTITY_TYPE__BUNDLE__FIELD_NAME.
  *
  * @return array
- *   A keyed array of unattached (faux) parent elements in the select chain.
- *
- * @see field_ui_default_value_widget()
- */
-function _erchain_faux_elements($parents) {
-  $elements = array();
-
-  // Get parent chain.
-  foreach ($parents as $key => $parent) {
-    extract($parent);
-    $field = field_info_field($field_name);
-    $instance = field_info_instance($entity_type, $field_name, $bundle);
-
-    // Shortcut so we can just re-use field_ui_default_value_widget().
-    $form = array();
-    $form_state = array();
-    module_load_include('inc', 'field_ui', 'field_ui.admin');
-    $element = field_ui_default_value_widget($field, $instance, $form, $form_state);
-    // Temporarily store the ER direction and child.
-    $element[$field_name][LANGUAGE_NONE]['#direction'] = $direction;
-    $element[$field_name][LANGUAGE_NONE]['#child'] = $child;
-    // Return just the element itself, without the wrapping default form markup.
-    $elements[$key] = $element[$field_name][LANGUAGE_NONE];
-  }
-
-  return $elements;
-}
-
-/**
- * Gets faux form element(s).
- *
- * @param array $parents
- *   An associative array of information about the hierarchy of parent
- *   Entityreference field elements, containing:
- *   - entity_type: The entity type containing the parent field.
- *   - bundle: The bundle containing the parent field.
- *   - field_name: The parent field name.
- *   - direction: The entityreference direction. Can be:
- *     - referencing: Limit to entities referencing the parent selection.
- *     - referenced: Limit to entities referenced by the parent.
- *   - child: A string representing the child field, following the pattern
- *     ENTITY_TYPE__BUNDLE__FIELD_NAME.
- *
- * @return array
  *   An unattached (faux) parent element in the select chain.
  *
  * @see field_ui_default_value_widget()
@@ -380,9 +342,9 @@ function _erchain_faux_element($parent) {
   module_load_include('inc', 'field_ui', 'field_ui.admin');
   $element = field_ui_default_value_widget($field, $instance, $form, $form_state);
   // Temporarily store the ER direction and child.
-  $element[$field_name][LANGUAGE_NONE]['#direction'] = $direction;
-  $element[$field_name][LANGUAGE_NONE]['#child'] = $child;
+  $element[$field_name][LANGUAGE_NONE][0]['target_id']['#direction'] = $direction;
+  $element[$field_name][LANGUAGE_NONE][0]['target_id']['#child'] = $child;
   
   // Return just the element itself, without the wrapping default form markup.
-  return $element[$field_name][LANGUAGE_NONE];
+  return $element[$field_name][LANGUAGE_NONE][0]['target_id'];
 }
