@@ -15,51 +15,199 @@
  * @todo Set options from configuration (instead of a hook), to determine the
  *   hierarchy structure.
  */
-function erchain_parents() {
-  return module_invoke_all('erchain_parents');
+function erchain_parents($instance) {
+  dpm($instance);
+  #return module_invoke_all('erchain_parents');
+
+  $parents = array();
+
+  if (isset($instance['erchain_parent'])) {
+    $parents[] = $instance['erchain_parent'];
+
+    // Get parents.
+    extract($instance['erchain_parent']);
+    $parent_instance = field_info_instance($entity_type, $field_name, $bundle);
+    // Recursively prepend parents to the array if configured.
+    $parent = erchain_parents($parent_instance);
+    if (!empty($parent)) {
+      array_unshift($parents, $parent);
+    }
+  }
+dpm($parents);
+  return $parents;
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function erchain_form_field_ui_field_edit_form_alter(&$form, &$form_state, $form_id) {
+  $form['instance']['erchain_parent'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Entityreference chain parent field'),
+    // Add stable wrapper ID.
+    '#prefix' => '<div id="erchain-parent-wrapper">',
+    '#suffix' => '</div>',
+  );
+
+  $ajax = array(
+    '#ajax' => array(
+      'callback' => 'erchain_field_ui_field_edit_form_ajax_callback',
+      'wrapper' => 'erchain-parent-wrapper',
+      'effect' => 'fade',
+    ),
+  );
+
+  $entity_type_options = array();
+  $entity_type_info = entity_get_info();
+  foreach ($entity_type_info as $entity_type => $entity_info) {
+    $entity_type_options[$entity_type] = $entity_info['label'];
+  }
+  $form['instance']['erchain_parent']['entity_type'] = array(
+    '#type' => 'select',
+    '#title' => t('Entity type'),
+    '#options' => $entity_type_options,
+    '#default_value' => isset($form['#instance']['erchain_parent']['entity_type']) ? $form['#instance']['erchain_parent']['entity_type'] : '',
+    '#description' => t('The Entityreference chain parent field entity type.'),
+    '#empty_option' => t('- None -'),
+  ) + $ajax;
+
+  // Display of bundle is determined by entity type select - both the stored and
+  // active selection values:
+  // - Until change, the bundle select should display only if an entity type
+  //   value is stored.
+  // - On change, the bundle select should display only if entity type selection
+  //   is not 'none' (should show/hide depending on this).
+  // @todo is there a simpler way to set this display criteria?
+  #$entity_type_triggered = !empty($form_state['triggering_element']) && ($form_state['triggering_element']['#name'] == 'instance[erchain_parent][entity_type]');
+  $entity_type_selected = isset($form_state['input']['instance']['erchain_parent']['entity_type']);
+  $entity_type_stored = isset($form['#instance']['erchain_parent']['entity_type']) && !empty($form['#instance']['erchain_parent']['entity_type']);
+  $entity_type_selection = $entity_type_selected ? $form_state['input']['instance']['erchain_parent']['entity_type'] :
+    ($entity_type_stored ? $form['#instance']['erchain_parent']['entity_type'] : '');
+
+  if ($entity_type_selection) {
+    // @todo Uncomment this option once 'referenced' is supported in
+    //   _erchain_filter_options().
+//    $form['instance']['erchain_parent']['direction'] = array(
+//      '#type' => 'select',
+//      '#title' => t('Entityreference direction'),
+//      '#options' => array(
+//        'referencing' => t('Referencing'),
+//        'referenced' => t('Referenced'),
+//      ),
+//      '#default_value' => isset($form['#instance']['erchain_parent']['direction']) ? $form['#instance']['erchain_parent']['direction'] : '',
+//      '#description' => t('The Entityreference chain reference direction.'
+//        . '"Referencing" limits to entities referencing the parent selection.'
+//        . '"Referenced" limits to entities referenced by the parent.'),
+//    );
+
+    $bundles = $entity_type_info[$entity_type_selection]['bundles'];
+    $bundle_options = array();
+    foreach ($bundles as $bundle => $bundle_info) {
+      $bundle_options[$bundle] = $bundle_info['label'];
+    }
+    $form['instance']['erchain_parent']['bundle'] = array(
+      '#type' => 'select',
+      '#title' => t('Bundle'),
+      '#options' => $bundle_options,
+      '#default_value' => isset($form['#instance']['erchain_parent']['bundle']) ? $form['#instance']['erchain_parent']['bundle'] : '',
+      '#description' => t('The Entityreference chain parent field bundle.'),
+      '#empty_option' => t('- None -'),
+      '#required' => TRUE,
+    ) + $ajax;
+  }
+
+  // Display of field is determined by bundle select - both stored and active
+  // values. Follows same logic as bundle element display above, with the
+  // additional criteria that it should also hide when entity type is 'none'.
+  #$bundle_triggered = !empty($form_state['triggering_element']) && ($form_state['triggering_element']['#name'] == 'instance[erchain_parent][bundle]');
+  $bundle_selected = isset($form_state['input']['instance']['erchain_parent']['bundle']);
+  $bundle_stored = isset($form['#instance']['erchain_parent']['bundle']) && !empty($form['#instance']['erchain_parent']['bundle']);
+  $bundle_type_selection = $bundle_selected ? $form_state['input']['instance']['erchain_parent']['bundle'] :
+    ($bundle_stored ? $form['#instance']['erchain_parent']['bundle'] : '');
+
+  if ($entity_type_selection && $bundle_type_selection) {
+    $instances = field_info_instances($entity_type_selection, $bundle_type_selection);
+    $field_options = array();
+    foreach ($instances as $field => $field_info) {
+      // @todo Limit to only Entityreference fields.
+      $field_options[$field] = $field_info['label'];
+    }
+    $form['instance']['erchain_parent']['field_name'] = array(
+      '#type' => 'select',
+      '#title' => t('Field'),
+      '#options' => $field_options,
+      '#default_value' => isset($form['#instance']['erchain_parent']['field_name']) ? $form['#instance']['erchain_parent']['field_name'] : '',
+      '#description' => t('The Entityreference chain parent field.'),
+      '#empty_option' => t('- None -'),
+      '#required' => TRUE,
+    );
+  }
+}
+
+/**
+ * Ajax callback for field_ui_field_edit_form().
+ */
+function erchain_field_ui_field_edit_form_ajax_callback($form, $form_state) {
+  // Find the parent element.
+  $form_state['rebuild'] = TRUE;
+  $parents = $form_state['triggering_element']['#array_parents'];
+  array_pop($parents);
+  $element = drupal_array_get_nested_value($form, $parents);
+
+  return $element;
 }
 
 /**
  * Implements hook_field_widget_WIDGET_TYPE_form_alter().
  */
 function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_state, $context) {
-  // @todo Get this criteria from hook_erchain_parents().
-  if (isset($element['#field_name']) && ($element['#field_name'] == 'field_season')) {
-    $value_key = key($context['field']['columns']);
-
-    // Add faux select(s) which AJAX reload the actual Entityreference select.
-    $parents = erchain_parents();
-    $elements = _erchain_faux_elements($parents);
-    foreach ($elements as $key => $value) {
-      $parent_id = implode('__', array($value['#entity_type'], $value['#bundle'], $value['#field_name']));
-      $element[$key] = $value;
-      $element[$key] += array(
-        '#ajax' => array(
-          'callback' => 'erchain_ajax_callback',
-          'wrapper' => $value['#child'] . '-' . $context['delta'],
-          'effect' => 'fade',
-        ),
-        // Add wrapper to support chaining parents.
-        '#prefix' => '<div id="' . $parent_id . '-' . $context['delta'] . '">',
-        '#suffix' => '</div>',
-        // The target_id element has 0 weight, so we just want to be above that.
-        '#weight' => -10,
-      );
-      // Hide actual Entityreference until a selection is made.
-      // @todo this is buggy (does not trigger until an AJAX callback is made).
-      #$triggering = $element['#field_name'] . '[' . LANGUAGE_NONE . '][' . $context['delta'] . '][' . $key . ']';
-      #$element[$value_key]['#states']['invisible'][':input[name="' . $triggering . '"]'] = array('value' => '_none');
-
-      // Get parent default value from saved child selection.
-      // @todo Do this more generically.
-      if (!empty($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id'])) {
-        $selected = node_load($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id']);
-        // Grap the first values if there are multiple.
-        $first = reset($selected->{$value['#field_name']}[LANGUAGE_NONE]);
-        $element[$key]['#default_value'] = $first['target_id'];
+  $parents = erchain_parents($context);
+  foreach ($parents as $parent_info) {
+    foreach (array('entity_type', 'bundle', 'field_name') as $key) {
+      // All criteria must match.
+      if (!isset($element["#$key"]) || (!$element["#$key"] == $parent_info[$key])) {
+        $skip = TRUE;
       }
     }
+    if (isset($skip)) {
+      continue;
+    }
 
+    $value_key = key($context['field']['columns']);
+    $parent = _erchain_faux_element($parent_info);
+    $parent_id = implode('__', array($parent['#entity_type'], $parent['#bundle'], $parent['#field_name']));
+    $element[$parent_id] = $parent;
+    $element[$parent_id] += array(
+      '#ajax' => array(
+        'callback' => 'erchain_ajax_callback',
+        'wrapper' => $parent['#child'] . '-' . $context['delta'],
+        'effect' => 'fade',
+      ),
+      // Add wrapper to support chaining parents.
+      '#prefix' => '<div id="' . $parent_id . '-' . $context['delta'] . '">',
+      '#suffix' => '</div>',
+      // The target_id element has 0 weight, so we just want to be above that.
+      '#weight' => -10,
+    );
+    // Hide actual Entityreference until a selection is made.
+    // @todo this is buggy (does not trigger until an AJAX callback is made).
+    #$triggering = $element['#field_name'] . '[' . LANGUAGE_NONE . '][' . $context['delta'] . '][' . $key . ']';
+    #$element[$value_key]['#states']['invisible'][':input[name="' . $triggering . '"]'] = array('value' => '_none');
+
+    // Get parent default value from saved child selection.
+    // @todo Do this more generically.
+    if (!empty($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id'])) {
+      $selected = node_load($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id']);
+      // Grap the first values if there are multiple.
+      if (isset($selected->{$parent['#field_name']})) {
+        $first = reset($selected->{$parent['#field_name']}[LANGUAGE_NONE]);
+        $element[$parent_id]['#default_value'] = $first['target_id'];
+      }
+    }
+  }
+
+  // Modify the actual Entityreference once, if faux elements are attached.
+  if (isset($parent_id)) {
     // Hide actual Entityreference until a selection is made.
     // @todo This is also buggy (when 'Add another item' is selected, the AJAX
     //   hidden class clearing is reset too).
@@ -196,4 +344,42 @@ function _erchain_faux_elements($parents) {
   }
 
   return $elements;
+}
+
+/**
+ * Gets faux form element(s).
+ *
+ * @param array $parents
+ *   An associative array of information about the hierarchy of parent
+ *   Entityreference field elements, containing:
+ *   - entity_type: The entity type containing the parent field.
+ *   - bundle: The bundle containing the parent field.
+ *   - field_name: The parent field name.
+ *   - direction: The entityreference direction. Can be:
+ *     - referencing: Limit to entities referencing the parent selection.
+ *     - referenced: Limit to entities referenced by the parent.
+ *   - child: A string representing the child field, following the pattern
+ *     ENTITY_TYPE__BUNDLE__FIELD_NAME.
+ *
+ * @return array
+ *   An unattached (faux) parent element in the select chain.
+ *
+ * @see field_ui_default_value_widget()
+ */
+function _erchain_faux_element($parent) {
+  extract($parent);
+  $field = field_info_field($field_name);
+  $instance = field_info_instance($entity_type, $field_name, $bundle);
+
+  // Shortcut so we can just re-use field_ui_default_value_widget().
+  $form = array();
+  $form_state = array();
+  module_load_include('inc', 'field_ui', 'field_ui.admin');
+  $element = field_ui_default_value_widget($field, $instance, $form, $form_state);
+  // Temporarily store the ER direction and child.
+  $element[$field_name][LANGUAGE_NONE]['#direction'] = $direction;
+  $element[$field_name][LANGUAGE_NONE]['#child'] = $child;
+  
+  // Return just the element itself, without the wrapping default form markup.
+  return $element[$field_name][LANGUAGE_NONE];
 }
