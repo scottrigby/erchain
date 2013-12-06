@@ -189,7 +189,7 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
 
     // Get the chain of Entityreference parent instances.
     $parents_instances = erchain_get_parent_instances($context['instance']);
-    
+
     // Add stable wrapper ID to only the actual Entityreference.
     // @todo make inline class configurable. For now, we want it.
     $element['#prefix'] = '<div class="container-inline" id="erchain-parent-wrapper-' . $context['delta'] . '">';
@@ -246,8 +246,6 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
           #$element[$child_id]['#access'] = TRUE;
         }
       }
-
-      #dpm(get_defined_vars());
     }
   }
 }
@@ -335,7 +333,15 @@ function erchain_get_parent_element($instance) {
   $form_state = array();
   module_load_include('inc', 'field_ui', 'field_ui.admin');
   $element = field_ui_default_value_widget($field, $instance, $form, $form_state);
-  
+
   // Return just the element itself, without the wrapping default form markup.
-  return $element[$instance['field_name']][LANGUAGE_NONE][0]['target_id'];
+  // Only return the first delta in a multi-delta field, because this will only
+  // be used for selection not storage.
+  // @todo get cardinality in a better way.
+  if (isset($element[$instance['field_name']][LANGUAGE_NONE][0])) {
+    return $element[$instance['field_name']][LANGUAGE_NONE][0]['target_id'];
+  }
+  else {
+    return $element[$instance['field_name']][LANGUAGE_NONE];
+  }
 }
