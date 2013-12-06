@@ -220,19 +220,22 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
 
       // Get parent default value from saved actual Entityreference field value.
       // @todo Do this more generically.
-      // @todo go all the way up the cahin with this.
-//      if (!empty($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id'])) {
-//        $selected = node_load($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id']);
-//        // Grap the first values if there are multiple.
-//        if (isset($selected->{$parent['#field_name']})) {
-//          $first = reset($selected->{$parent['#field_name']}[LANGUAGE_NONE]);
-//          $element[$parent_id]['#default_value'] = $first['target_id'];
-//        }
-//      }
+      // @todo go all the way up the chain with this.
+      if (!empty($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id'])) {
+        // @todo entity_load more generically.
+        $selected = node_load($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id']);
+        // Grab the first values if there are multiple.
+        if (isset($selected->{$parent_instance['field_name']})) {
+          $first = reset($selected->{$parent_instance['field_name']}[LANGUAGE_NONE]);
+          $element[$parent_id]['#default_value'] = $first['target_id'];
+        }
+      }
 
       // AJAX trigger.
       // Change the immediate child values based on this element's selection.
       // This will only happen on Ajax submit.
+      // @todo Filter options on load (if an entity has the actual
+      //   Entityreference saved with a value), and not only on AJAX trigger.
       $parent_element_ajax_triggered = isset($form_state['input'][$element['#field_name']][LANGUAGE_NONE][$context['delta']][$parent_id]);
       $parent_element_ajax_value = $parent_element_ajax_triggered ? $form_state['input'][$element['#field_name']][LANGUAGE_NONE][$context['delta']][$parent_id] : NULL;
       if ($parent_element_ajax_triggered) {
