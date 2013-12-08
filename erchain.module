@@ -46,7 +46,6 @@ function erchain_form_field_ui_field_edit_form_alter(&$form, &$form_state, $form
   // - On change, the bundle select should display only if entity type selection
   //   is not 'none' (should show/hide depending on this).
   // @todo Is there a simpler way to set this display criteria?
-  #$entity_type_triggered = !empty($form_state['triggering_element']) && ($form_state['triggering_element']['#name'] == 'instance[erchain_parent][entity_type]');
   $entity_type_selected = isset($form_state['input']['instance']['erchain_parent']['entity_type']);
   $entity_type_stored = isset($form['#instance']['erchain_parent']['entity_type']) && !empty($form['#instance']['erchain_parent']['entity_type']);
   $entity_type_selection = $entity_type_selected ? $form_state['input']['instance']['erchain_parent']['entity_type'] :
@@ -87,7 +86,6 @@ function erchain_form_field_ui_field_edit_form_alter(&$form, &$form_state, $form
   // Display of field is determined by bundle select - both stored and active
   // values. Follows same logic as bundle element display above, with the
   // additional criteria that it should also hide when entity type is 'none'.
-  #$bundle_triggered = !empty($form_state['triggering_element']) && ($form_state['triggering_element']['#name'] == 'instance[erchain_parent][bundle]');
   $bundle_selected = isset($form_state['input']['instance']['erchain_parent']['bundle']);
   $bundle_stored = isset($form['#instance']['erchain_parent']['bundle']) && !empty($form['#instance']['erchain_parent']['bundle']);
   $bundle_selection = $bundle_selected ? $form_state['input']['instance']['erchain_parent']['bundle'] :
@@ -170,6 +168,8 @@ function erchain_get_parent_instances($instance, &$parents_instances = array()) 
 
 /**
  * Implements hook_field_widget_WIDGET_TYPE_form_alter().
+ *
+ * @todo Support parent multiple cardinality (Unsupported operand types error).
  */
 function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_state, $context) {
   // Check if the element is configured to have an erchain parent.
@@ -282,7 +282,7 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
  *   The trigering element array. In addition to the normal element data,
  *   there are also two more keys:
  *   - #erchain_direction: The configured reference direction
- *   - #value: The selected value
+ *   - #default_value: The selected value
  * @param array $element
  *   By reference. The triggered element array whose options will be filtered.
  */
@@ -362,9 +362,10 @@ function erchain_get_parent_element($instance) {
   // Return just the element itself, without the wrapping default form markup.
   // Only return the first delta in a multi-delta field, because this will only
   // be used for selection not storage.
-  // @todo get cardinality in a better way. Check field_multiple_value_form().
-  if (isset($element[$instance['field_name']][LANGUAGE_NONE][0])) {
-    return $element[$instance['field_name']][LANGUAGE_NONE][0]['target_id'];
+  $multiple = ($field['cardinality'] == FIELD_CARDINALITY_UNLIMITED) || ($field['cardinality'] > 1);
+  if ($multiple) {
+    $value_key = key($context['field']['columns']);
+    return $element[$instance['field_name']][LANGUAGE_NONE][0][$value_key];
   }
   else {
     return $element[$instance['field_name']][LANGUAGE_NONE];
