@@ -45,7 +45,7 @@ function erchain_form_field_ui_field_edit_form_alter(&$form, &$form_state, $form
   //   value is stored.
   // - On change, the bundle select should display only if entity type selection
   //   is not 'none' (should show/hide depending on this).
-  // @todo is there a simpler way to set this display criteria?
+  // @todo Is there a simpler way to set this display criteria?
   #$entity_type_triggered = !empty($form_state['triggering_element']) && ($form_state['triggering_element']['#name'] == 'instance[erchain_parent][entity_type]');
   $entity_type_selected = isset($form_state['input']['instance']['erchain_parent']['entity_type']);
   $entity_type_stored = isset($form['#instance']['erchain_parent']['entity_type']) && !empty($form['#instance']['erchain_parent']['entity_type']);
@@ -59,7 +59,7 @@ function erchain_form_field_ui_field_edit_form_alter(&$form, &$form_state, $form
       '#options' => array(
         'referencing' => t('Referencing'),
         // @todo Uncomment this option once 'referenced' is supported in
-        //   _erchain_filter_options().
+        //   erchain_filter_element_options().
         #'referenced' => t('Referenced'),
       ),
       '#default_value' => isset($form['#instance']['erchain_parent']['erchain_direction']) ? $form['#instance']['erchain_parent']['erchain_direction'] : '',
@@ -143,18 +143,22 @@ function erchain_field_ui_field_edit_form_ajax_callback($form, $form_state) {
  */
 function erchain_get_parent_instances($instance, &$parents_instances = array()) {
   if (isset($instance['erchain_parent'])) {
-    // @todo ensure empty keys are not saved so we don't have to check this.
+    // @todo Ensure empty keys are not saved so we don't have to check this.
     if (!empty($instance['erchain_parent']['entity_type'])
       && !empty($instance['erchain_parent']['bundle'])
       && !empty($instance['erchain_parent']['field_name'])) {
 
       extract($instance['erchain_parent']);
       $parent_instance = field_info_instance($entity_type, $field_name, $bundle);
-      // @todo Add erchain_direction configuration once we support 'referencing'. For now
-      //   set this option explicitly.
+      // @todo Add erchain_direction configuration once we support 
+      //   'referencing'. For now set this option explicitly.
       $parent_instance['erchain_direction'] = isset($instance['erchain_parent']['erchain_direction']) ? $instance['erchain_parent']['erchain_direction'] : 'referenced';
-      // We add the child key is for convenience, so each parent can target it's
-      // child's #ajax wrapper when looping through the chain.
+      // We add a child key, so that in
+      // erchain_field_widget_multiple_selects_form_alter():
+      //   - We can identify the lowest item in the chain (the actual
+      //     entityreference field)
+      //   - Each parent can target it's child's key to filter options when
+      //     looping through the chain.
       $parent_instance['erchain_child'] = implode('__', array($instance['entity_type'], $instance['bundle'], $instance['field_name']));
       array_push($parents_instances, $parent_instance);
       erchain_get_parent_instances($parent_instance, $parents_instances);
@@ -166,12 +170,8 @@ function erchain_get_parent_instances($instance, &$parents_instances = array()) 
 
 /**
  * Implements hook_field_widget_WIDGET_TYPE_form_alter().
- *
- * @todo rebuild the entire wrapper.
  */
 function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_state, $context) {
-  // @todo remove debuging line.
-  #return;
   // Check if the element is configured to have an erchain parent.
   // Note, that since we load parent elements using the Field API, this function
   // will also run for each of those.
@@ -213,16 +213,11 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
       $parent_id = implode('__', array($parent_element['#entity_type'], $parent_element['#bundle'], $parent_element['#field_name']));
       $element[$parent_id] = $parent_element;
 
-      // Check if this is the first item in the parents chain. If so, the child 
-      // should be the actual Entityreference element.
-      $value_key = key($context['field']['columns']);
-      $child_id = $parent_position == 0 ? $value_key : $parent_instance['erchain_child'];
-
-      // Get parent default value from saved actual Entityreference field value.
+      // Set parent default value from saved actual Entityreference field value.
       // @todo Do this more generically.
-      // @todo go all the way up the chain with this.
+      // @todo Go all the way up the chain with this.
       if (!empty($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id'])) {
-        // @todo entity_load more generically.
+        // @todo entity_load more generically. For now node_load works for us.
         $selected = node_load($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id']);
         // Grab the first values if there are multiple.
         if (isset($selected->{$parent_instance['field_name']})) {
@@ -239,15 +234,42 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
       $parent_element_ajax_triggered = isset($form_state['input'][$element['#field_name']][LANGUAGE_NONE][$context['delta']][$parent_id]);
       $parent_element_ajax_value = $parent_element_ajax_triggered ? $form_state['input'][$element['#field_name']][LANGUAGE_NONE][$context['delta']][$parent_id] : NULL;
       if ($parent_element_ajax_triggered) {
-        if ($parent_element_ajax_value != '_none') {
-          // Temporarily store the ER erchain_direction and erchain_child for
-          // the the query to filter the options.
-          $element[$parent_id]['#value'] = $parent_element_ajax_value;
-          $element[$parent_id]['#erchain_direction'] = $parent_instance['erchain_direction'];
-          _erchain_filter_options($element[$parent_id], $element[$child_id]);
-          // @todo Show child if a parent selection is made.
-          #$element[$child_id]['#access'] = TRUE;
-        }
+        // Override default value on AJAX trigger.
+        $element[$parent_id]['#default_value'] = $parent_element_ajax_value;
+
+        // Temporary fix for visible $element['_weight'] field after AJAX
+        // trigger on entity forms.
+        // @todo Debug this more thoroughly. So far:
+        //   - '_weight' added in field_multiple_value_form(), just before
+        //     invocation of hook_field_widget_WIDGET_TYPE_form_alter()
+        //   - Later should be unset in _field_sort_items()
+        // @todo Debug this more thoroughly. For now, just hide it.
+        $element['_weight']['#attributes']['class'][] = 'js-hide';
+      }
+      
+      // Check if this is the first item in the parents chain. If so, the
+      // child should be the actual Entityreference element.
+      $value_key = key($context['field']['columns']);
+      $child_id = $parent_position == 0 ? $value_key : $parent_instance['erchain_child'];
+
+      // Check for a parent selection, whether stored or AJAX triggered. Unless
+      // either of these two conditions are met, the parent element
+      // '#default_value' will be empty.
+      $parent_value = !empty($element[$parent_id]['#default_value']);
+      $parent_value_none = $parent_value && ($element[$parent_id]['#default_value'] == '_none');
+      if (!$parent_value || $parent_value_none) {
+        // If there is no parent selection stored or AJAX triggered, or if the
+        // value is _none, hide the child field.
+        // @todo Ensure the child field does not store a value.
+        $element[$child_id]['#value'] = '_none';
+        $element[$child_id]['#access'] = FALSE;
+      }
+      else {
+        // Temporarily stash the ER erchain_direction on the element for the
+        // query to filter the options properly.
+        $element[$parent_id]['#erchain_direction'] = $parent_instance['erchain_direction'];
+        // Filter child options based on parent selection.
+        erchain_filter_element_options($element[$parent_id], $element[$child_id]);
       }
     }
   }
@@ -264,9 +286,9 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
  * @param array $element
  *   By reference. The triggered element array whose options will be filtered.
  */
-function _erchain_filter_options($triggering, &$element) {
+function erchain_filter_element_options($triggering, &$element) {
   // Get default field values.
-  list($entity_type, $bundle, $field_name, $erchain_direction, $selected) = array($triggering['#entity_type'], $triggering['#bundle'], $triggering['#field_name'], $triggering['#erchain_direction'], $triggering['#value']);
+  list($entity_type, $bundle, $field_name, $erchain_direction, $selected) = array($triggering['#entity_type'], $triggering['#bundle'], $triggering['#field_name'], $triggering['#erchain_direction'], $triggering['#default_value']);
 
   $ids = array();
   switch ($erchain_direction) {
@@ -340,7 +362,7 @@ function erchain_get_parent_element($instance) {
   // Return just the element itself, without the wrapping default form markup.
   // Only return the first delta in a multi-delta field, because this will only
   // be used for selection not storage.
-  // @todo get cardinality in a better way.
+  // @todo get cardinality in a better way. Check field_multiple_value_form().
   if (isset($element[$instance['field_name']][LANGUAGE_NONE][0])) {
     return $element[$instance['field_name']][LANGUAGE_NONE][0]['target_id'];
   }
