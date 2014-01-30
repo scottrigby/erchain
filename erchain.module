@@ -9,6 +9,12 @@
  * Implements hook_form_FORM_ID_alter().
  */
 function erchain_form_field_ui_field_edit_form_alter(&$form, &$form_state, $form_id) {
+  // Only allow erchain_parent selection on fields configured to use the
+  // multiple_selects widget.
+  if ($form['#instance']['widget']['module'] != 'multiple_selects') {
+    return;
+  }
+
   $form['instance']['erchain_parent'] = array(
     '#type' => 'fieldset',
     '#title' => t('Entityreference chain parent field'),
