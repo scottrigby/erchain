@@ -274,8 +274,20 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
         // Temporarily stash the ER erchain_direction on the element for the
         // query to filter the options properly.
         $element[$parent_id]['#erchain_direction'] = $parent_instance['erchain_direction'];
+
         // Filter child options based on parent selection.
         erchain_filter_element_options($element[$parent_id], $element[$child_id]);
+
+        // If parent is selected, we want to make child selection required. See
+        // form_process_select(). Also fixes issue where a required
+        // multiple_selects field looses the empty option on form cache such as
+        // entity preview.
+        $element[$child_id]['#required'] = TRUE;
+        $element[$child_id]['#empty_value'] = '';
+        $element[$child_id]['#empty_option'] = t('- Select -');
+        if (isset($element[$child_id]['#options']['_none'])) {
+          unset($element[$child_id]['#options']['_none']);
+        }
       }
     }
   }
