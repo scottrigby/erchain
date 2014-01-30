@@ -261,9 +261,9 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
       // Check for a parent selection, whether stored or AJAX triggered. Unless
       // either of these two conditions are met, the parent element
       // '#default_value' will be empty.
-      $parent_value = !empty($element[$parent_id]['#default_value']);
-      $parent_value_none = $parent_value && ($element[$parent_id]['#default_value'] == '_none');
-      if (!$parent_value || $parent_value_none) {
+      $parent_empty_option = $element[$parent_id]['#default_value'] == '_none';
+      $parent_empty_value = empty($element[$parent_id]['#default_value']);
+      if ($parent_empty_option || $parent_empty_value) {
         // If there is no parent selection stored or AJAX triggered, or if the
         // value is _none, hide the child field.
         // @todo Ensure the child field does not store a value.
