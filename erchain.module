@@ -260,7 +260,7 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
         //   - '_weight' added in field_multiple_value_form(), just before
         //     invocation of hook_field_widget_WIDGET_TYPE_form_alter()
         //   - Later should be unset in _field_sort_items()
-        // @todo Debug this more thoroughly. For now, just hide it.
+        // For now, just hide it.
         $element['_weight']['#attributes']['class'][] = 'js-hide';
       }
       
@@ -323,7 +323,7 @@ function erchain_filter_element_options($triggering, &$element) {
   switch ($erchain_direction) {
     case 'referencing':
       // @todo limit query by the entity types / bundles which contain ER fields
-      //   who's settings allow referecing the selected entity type / bundle.
+      //   who's settings allow referencing the selected entity type / bundle.
       $query = new EntityFieldQuery();
       $query->fieldCondition($field_name, 'target_id', $selected, '=')
         // Run the query as user 1.
