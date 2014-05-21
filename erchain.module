@@ -380,12 +380,8 @@ function erchain_get_parent_element($instance) {
   // Return just the element itself, without the wrapping default form markup.
   // Only return the first delta in a multi-delta field, because this will only
   // be used for selection not storage.
-  $multiple = ($field['cardinality'] == FIELD_CARDINALITY_UNLIMITED) || ($field['cardinality'] > 1);
-  if ($multiple) {
-    $value_key = key($context['field']['columns']);
-    return $element[$instance['field_name']][LANGUAGE_NONE][0][$value_key];
-  }
-  else {
-    return $element[$instance['field_name']][LANGUAGE_NONE];
-  }
+  $value_key = key($field['columns']);
+  // The multiple_selects module always returns an array, regardless of
+  // cardinality.
+  return $element[$instance['field_name']][LANGUAGE_NONE][0][$value_key];
 }
