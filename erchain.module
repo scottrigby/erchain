@@ -201,6 +201,14 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
     $element['#prefix'] = '<div class="container-inline" id="erchain-parent-wrapper-' . $context['delta'] . '">';
     $element['#suffix'] = '</div>';
 
+    // Get the current, stored element reference.
+    // @todo Use field's language instead of LANGUAGE_NONE.
+    if (!empty($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id'])) {
+      $element_reference_id = $context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id'];
+      // @todo change to entity_load().
+      $element_reference = node_load($element_reference_id);
+    }
+
     $weight = 0;
     foreach ($parents_instances as $parent_position => $parent_instance) {
       // Add the parent field to the existing element.
@@ -219,24 +227,25 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
       $parent_id = implode('__', array($parent_element['#entity_type'], $parent_element['#bundle'], $parent_element['#field_name']));
       $element[$parent_id] = $parent_element;
 
-      // Set parent default value from saved actual Entityreference field value.
-      // @todo Do this more generically.
-      // @todo Go all the way up the chain with this.
-      if (!empty($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id'])) {
-        // @todo entity_load more generically. For now node_load works for us.
-        $selected = node_load($context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id']);
+      // If there is a stored element reference ID, set the default value of the
+      // element. Then - for each parent faux element, find the reference ID -
+      // and repeat.
+      if (isset($element_reference)) {
         // Grab the first values if there are multiple.
-        if (isset($selected->{$parent_instance['field_name']})) {
-          $first = reset($selected->{$parent_instance['field_name']}[LANGUAGE_NONE]);
+        if (isset($element_reference->{$parent_instance['field_name']})) {
+          $first = reset($element_reference->{$parent_instance['field_name']}[LANGUAGE_NONE]);
           $element[$parent_id]['#default_value'] = $first['target_id'];
+
+          // Set up next value. This only happens at the end of the initial
+          // chained parent.
+          // @todo change to entity_load().
+          $element_reference = node_load($first['target_id']);
         }
       }
 
       // AJAX trigger.
       // Change the immediate child values based on this element's selection.
       // This will only happen on Ajax submit.
-      // @todo Filter options on load (if an entity has the actual
-      //   Entityreference saved with a value), and not only on AJAX trigger.
       $parent_element_ajax_triggered = isset($form_state['input'][$element['#field_name']][LANGUAGE_NONE][$context['delta']][$parent_id]);
       $parent_element_ajax_value = $parent_element_ajax_triggered ? $form_state['input'][$element['#field_name']][LANGUAGE_NONE][$context['delta']][$parent_id] : NULL;
       if ($parent_element_ajax_triggered) {
