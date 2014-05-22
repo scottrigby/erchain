@@ -289,14 +289,10 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
     $element['target_id']['#weight'] = $weight + 1;
 
     // Check access for, and filter options on, the real element - based on it's
-    // parent status and value.
-    // @todo Remove this check, as there will always be a parent instance here.
-    if (isset($parent_instance)) {
-      // Temporarily stash the ER erchain_direction on the element for the
-      // query to filter the options properly.
-      $parent_element['#erchain_direction'] = $parent_instance['erchain_direction'];
-      erchain_element_access($parent_element, $element['target_id']);
-    }
+    // parent status and value. Also temporarily stash the ER erchain_direction
+    // on the element for the query to filter the options properly.
+    $parent_element['#erchain_direction'] = $parent_instance['erchain_direction'];
+    erchain_element_access($parent_element, $element['target_id']);
 
     // Ajax trigger.
     if (isset($form_state['triggering_element'])) {
