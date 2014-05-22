@@ -165,20 +165,22 @@ function erchain_has_parents($instance) {
  */
 function erchain_get_parent_instances($instance, &$parents_instances = array()) {
   if (erchain_has_parents($instance)) {
-      extract($instance['erchain_parent']);
-      $parent_instance = field_info_instance($entity_type, $field_name, $bundle);
-      // @todo Add erchain_direction configuration once we support 
-      //   'referencing'. For now set this option explicitly.
-      $parent_instance['erchain_direction'] = isset($instance['erchain_parent']['erchain_direction']) ? $instance['erchain_parent']['erchain_direction'] : 'referenced';
-      // We add a child key, so that in
-      // erchain_field_widget_multiple_selects_form_alter():
-      //   - We can identify the lowest item in the chain (the actual
-      //     entityreference field)
-      //   - Each parent can target it's child's key to filter options when
-      //     looping through the chain.
-      $parent_instance['erchain_child'] = implode('__', array($instance['entity_type'], $instance['bundle'], $instance['field_name']));
-      array_unshift($parents_instances, $parent_instance);
-      erchain_get_parent_instances($parent_instance, $parents_instances);
+    extract($instance['erchain_parent']);
+    $parent_instance = field_info_instance($entity_type, $field_name, $bundle);
+
+    // Set a direction on these faux elements for our query.
+    // @todo Add erchain_direction configuration once we support
+    //   'referencing'. For now set this option explicitly.
+    $parent_instance['erchain_direction'] = isset($instance['erchain_parent']['erchain_direction']) ? $instance['erchain_parent']['erchain_direction'] : 'referenced';
+
+    // We add a key so that in hook_field_widget_WIDGET_TYPE_form_alter() we can
+    // identify this parent instance is added by erchain. We need that because
+    // we load faux parents using the Field API, which also triggers that hook,
+    // and we only want to run that on the real Entity reference instance.
+    $parent_instance['erchain_faux_element'] = TRUE;
+
+    array_unshift($parents_instances, $parent_instance);
+    erchain_get_parent_instances($parent_instance, $parents_instances);
   }
 
   return $parents_instances;
@@ -200,7 +202,7 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
     // Entity reference element anymore. So we need to only act only on the
     // actual Entity reference element, and loop over each item in the chain of
     // parents.
-    && !isset($context['instance']['erchain_child'])) {
+    && !isset($context['instance']['erchain_faux_element'])) {
 
     // Get the chain of Entityreference parent instances.
     $parents_instances = erchain_get_parent_instances($context['instance']);
