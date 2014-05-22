@@ -216,6 +216,7 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
       $target_type = $context['field']['settings']['target_type'];
       $id = $context['form']['#entity']->{$element['#field_name']}[LANGUAGE_NONE][$context['delta']]['target_id'];
       $element_reference = entity_load_single($target_type, $id);
+      $faux_defaults = erchain_get_parent_element_default_values($parents_instances, $element_reference);
     }
 
     $weight = 0;
@@ -233,81 +234,152 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
       $weight++;
 
       $parent_id = implode('__', array($parent_element['#entity_type'], $parent_element['#bundle'], $parent_element['#field_name']));
-      $element[$parent_id] = $parent_element;
 
-      // If there is a stored element reference ID, set the default value of the
-      // element. Then - for each parent faux element, find the reference ID -
-      // and repeat.
-      if (isset($element_reference)) {
-        // Grab the first values if there are multiple.
-        if (isset($element_reference->{$parent_instance['field_name']})) {
-          $first = reset($element_reference->{$parent_instance['field_name']}[LANGUAGE_NONE]);
-          $element[$parent_id]['#default_value'] = $first['target_id'];
-
-          // Set up next value. This only happens at the end of the initial
-          // chained parent.
-          $field = field_info_field($parent_instance['field_name']);
-          $target_type = $field['settings']['target_type'];
-          $id = $first['target_id'];
-          $element_reference = entity_load_single($target_type, $id);
-        }
+      // Set faux default value, based on the stored real element value, if any.
+      if (isset($faux_defaults[$parent_id])) {
+        $parent_element['#default_value'] = $faux_defaults[$parent_id];
       }
 
       // AJAX trigger.
-      // Change the immediate child values based on this element's selection.
-      // This will only happen on Ajax submit.
-      $parent_element_ajax_triggered = isset($form_state['input'][$element['#field_name']][LANGUAGE_NONE][$context['delta']][$parent_id]);
-      $parent_element_ajax_value = $parent_element_ajax_triggered ? $form_state['input'][$element['#field_name']][LANGUAGE_NONE][$context['delta']][$parent_id] : NULL;
-      if ($parent_element_ajax_triggered) {
+      if (isset($form_state['triggering_element'])) {
+        // The parents array represents the element parents in the form. We
+        // reverse before listing because we only care about several of these,
+        // starting from the last.
+        $parents = $form_state['triggering_element']['#parents'];
+        list($triggering_element_id, $delta, $language) = array_reverse($parents);
+        $triggered_value = $form_state['triggering_element']['#value'];
+
         // Override default value on AJAX trigger.
-        $element[$parent_id]['#default_value'] = $parent_element_ajax_value;
+        $element[$triggering_element_id]['#default_value'] = $triggered_value;
 
-        // Temporary fix for visible $element['_weight'] field after AJAX
-        // trigger on entity forms.
-        // @todo Debug this more thoroughly. So far:
-        //   - '_weight' added in field_multiple_value_form(), just before
-        //     invocation of hook_field_widget_WIDGET_TYPE_form_alter()
-        //   - Later should be unset in _field_sort_items()
-        // For now, just hide it.
-        $element['_weight']['#attributes']['class'][] = 'js-hide';
+        // Also (do we need to do this now, because we're unsetting access?) set
+        // default value based on form_state value (or check for one or the
+        // other farther below).
+        $values = $form_state['values'][$element['#field_name']][LANGUAGE_NONE][$context['delta']];
+        $parent_element['#default_value'] = $values[$parent_id];
       }
-      
-      // Check if this is the first item in the parents chain. If so, the
-      // child should be the actual Entityreference element.
-      $value_key = key($context['field']['columns']);
-      $child_id = $parent_position == 0 ? $value_key : $parent_instance['erchain_child'];
 
-      // Check for a parent selection, whether stored or AJAX triggered. Unless
-      // either of these two conditions are met, the parent element
-      // '#default_value' will be empty.
-      $parent_empty_option = $element[$parent_id]['#default_value'] == '_none';
-      $parent_empty_value = empty($element[$parent_id]['#default_value']);
-      if ($parent_empty_option || $parent_empty_value) {
-        // If there is no parent selection stored or AJAX triggered, or if the
-        // value is _none, hide the child field.
-        // @todo Ensure the child field does not store a value.
-        $element[$child_id]['#value'] = '_none';
-        $element[$child_id]['#access'] = FALSE;
-      }
-      else {
+      // Check access for, and filter options on, the parent - based on it's
+      // grandparent status and value.
+      if (isset($grandparent_instance)) {
+        $grandparent_id = implode('__', array($grandparent_instance['entity_type'], $grandparent_instance['bundle'], $grandparent_instance['field_name']));
+        $grandparent_element = $element[$grandparent_id];
         // Temporarily stash the ER erchain_direction on the element for the
         // query to filter the options properly.
-        $element[$parent_id]['#erchain_direction'] = $parent_instance['erchain_direction'];
-
-        // Filter child options based on parent selection.
-        erchain_filter_element_options($element[$parent_id], $element[$child_id]);
-
-        // If parent is selected, we want to make child selection required. See
-        // form_process_select(). Also fixes issue where a required
-        // multiple_selects field looses the empty option on form cache such as
-        // entity preview.
-        $element[$child_id]['#required'] = TRUE;
-        $element[$child_id]['#empty_value'] = '';
-        $element[$child_id]['#empty_option'] = t('- Select -');
-        if (isset($element[$child_id]['#options']['_none'])) {
-          unset($element[$child_id]['#options']['_none']);
-        }
+        $grandparent_element['#erchain_direction'] = $grandparent_instance['erchain_direction'];
+        erchain_element_access($grandparent_element, $parent_element);
       }
+
+      // Add the parent field to the existing element.
+      $element[$parent_id] = $parent_element;
+
+      // Stash this as the next parent's parent element (for now so we can get
+      // the instance settings, like direction).
+      $grandparent_instance = $parent_instance;
+    }
+
+    // Alter real element after parents.
+
+    // Add a title to the target_id element itself.
+    $element['target_id']['#title'] = $context['instance']['label'];
+
+    // Ensure the real element is heavier than it's parents.
+    $element['target_id']['#weight'] = $weight + 1;
+
+    // Check access for, and filter options on, the real element - based on it's
+    // parent status and value.
+    // @todo Remove this check, as there will always be a parent instance here.
+    if (isset($parent_instance)) {
+      // Temporarily stash the ER erchain_direction on the element for the
+      // query to filter the options properly.
+      $parent_element['#erchain_direction'] = $parent_instance['erchain_direction'];
+      erchain_element_access($parent_element, $element['target_id']);
+    }
+
+    // Ajax trigger.
+    if (isset($form_state['triggering_element'])) {
+      // Temporary fix for visible $element['_weight'] field after AJAX
+      // trigger on entity forms.
+      // @todo Debug this more thoroughly. So far:
+      //   - '_weight' added in field_multiple_value_form(), just before
+      //     invocation of hook_field_widget_WIDGET_TYPE_form_alter()
+      //   - Later should be unset in _field_sort_items()
+      // For now, just hide it.
+      $element['_weight']['#attributes']['class'][] = 'js-hide';
+    }
+  }
+}
+
+/**
+ * Gets erchain faux parent element default values.
+ *
+ * @param $parents_instances
+ *   The return value from erchain_get_parent_instances().
+ * @param $element_reference
+ *   The real Entity reference element's referenced Entity.
+ *
+ * @return array
+ *   An array of parent element default values, keyed by parent ID.
+ */
+function erchain_get_parent_element_default_values($parents_instances, $element_reference) {
+  // Load each default, then compare these instances (loaded in reverse) to the
+  // current parent instance from params.
+  $faux_defaults = array();
+  foreach (array_reverse($parents_instances) as $parent_instance) {
+    $parent_id = implode('__', array($parent_instance['entity_type'], $parent_instance['bundle'], $parent_instance['field_name']));
+
+    // Grab the first values if there are multiple.
+    if (isset($element_reference->{$parent_instance['field_name']})) {
+      $first = reset($element_reference->{$parent_instance['field_name']}[LANGUAGE_NONE]);
+      $faux_defaults[$parent_id] = $first['target_id'];
+
+      // Set up next value. This happens - in reverse - until the the top
+      // chained parent.
+      $field = field_info_field($parent_instance['field_name']);
+      $target_type = $field['settings']['target_type'];
+      $id = $first['target_id'];
+      $element_reference = entity_load_single($target_type, $id);
+    }
+  }
+  return $faux_defaults;
+}
+
+/**
+ * Sets access or required status on an element.
+ *
+ * @param array $parent_element
+ *   By reference. A parent element whose access will be set.
+ * @param array $element
+ *   By reference. An element whose options will be filtered, and whose required
+ *   status will be set.
+ */
+function erchain_element_access(&$parent_element, &$element) {
+  // Check access on the parent element.
+  $parent_empty_option = $parent_element['#default_value'] == '_none';
+  $parent_empty_value = empty($parent_element['#default_value']);
+  $parent_access = isset($parent_element['#access']) ? $parent_element['#access'] : TRUE;
+  // Unless either of these two conditions are met, the parent element
+  // '#default_value' will be empty.
+  if ($parent_empty_option || $parent_empty_value || !$parent_access) {
+    // If there is no parent selection stored or AJAX triggered, or if the
+    // value is _none, or if the parent access is FALSE, hide the current
+    // element and ensure it does not store a value.
+    $element['#value'] = '_none';
+    $element['#access'] = FALSE;
+  }
+  else {
+    // Filter child options based on parent selection.
+    erchain_filter_element_options($parent_element, $element);
+
+    // If parent is selected, we want to make child selection required. See
+    // form_process_select(). Also fixes issue where a required
+    // multiple_selects field looses the empty option on form cache such as
+    // entity preview.
+    $element['#required'] = TRUE;
+    $element['#empty_value'] = '';
+    $element['#empty_option'] = t('- Select -');
+    if (isset($element['#options']['_none'])) {
+      unset($element['#options']['_none']);
     }
   }
 }
