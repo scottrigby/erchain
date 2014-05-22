@@ -132,6 +132,24 @@ function erchain_field_ui_field_edit_form_ajax_callback($form, $form_state) {
   return $element;
 }
 
+/**
+ * Helper function to check if a field instance has erchain parents.
+ *
+ * @param array $instance
+ *   A field instance.
+ *
+ * @return bool
+ *   Whether or not the instance has erchain parents.
+ */
+function erchain_has_parents($instance) {
+  return isset($instance['erchain_parent'])
+    // @todo Ensure empty keys are not saved on the field instance, so we don't
+    //   have to check these explicitly.
+    && !empty($instance['erchain_parent']['entity_type'])
+    && !empty($instance['erchain_parent']['bundle'])
+    && !empty($instance['erchain_parent']['field_name']);
+}
+
  /**
  * Gets a chain of Entityreference parent instances.
  *
@@ -146,12 +164,7 @@ function erchain_field_ui_field_edit_form_ajax_callback($form, $form_state) {
  *
  */
 function erchain_get_parent_instances($instance, &$parents_instances = array()) {
-  if (isset($instance['erchain_parent'])) {
-    // @todo Ensure empty keys are not saved so we don't have to check this.
-    if (!empty($instance['erchain_parent']['entity_type'])
-      && !empty($instance['erchain_parent']['bundle'])
-      && !empty($instance['erchain_parent']['field_name'])) {
-
+  if (erchain_has_parents($instance)) {
       extract($instance['erchain_parent']);
       $parent_instance = field_info_instance($entity_type, $field_name, $bundle);
       // @todo Add erchain_direction configuration once we support 
@@ -166,7 +179,6 @@ function erchain_get_parent_instances($instance, &$parents_instances = array()) 
       $parent_instance['erchain_child'] = implode('__', array($instance['entity_type'], $instance['bundle'], $instance['field_name']));
       array_push($parents_instances, $parent_instance);
       erchain_get_parent_instances($parent_instance, $parents_instances);
-    }
   }
 
   return $parents_instances;
@@ -181,15 +193,12 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
   // Check if the element is configured to have an erchain parent.
   // Note, that since we load parent elements using the Field API, this function
   // will also run for each of those.
-  if (isset($context['instance']['erchain_parent'])
-    // @todo Ensure empty keys are not saved so we don't have to check this.
-    && !empty($context['instance']['erchain_parent']['entity_type'])
-    && !empty($context['instance']['erchain_parent']['bundle'])
-    && !empty($context['instance']['erchain_parent']['field_name'])
-    // Check is this is the bottom of the chain (the actual entityreference
-    // field). On parent elements, we'll only have that current element to
-    // alter, rather than the actual Entityreference element anymore. So we need
-    // to only act on the lowest child, and loop over each item in the chain of
+  if (erchain_has_parents($context['instance'])
+    // Only run on the actual Entity reference element, not our faux-attached
+    // parents (which also call this hook). The reason is, on parent elements
+    // we'll only have that current element to alter, rather than the actual
+    // Entity reference element anymore. So we need to only act only on the
+    // actual Entity reference element, and loop over each item in the chain of
     // parents.
     && !isset($context['instance']['erchain_child'])) {
 
