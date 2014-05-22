@@ -160,7 +160,7 @@ function erchain_has_parents($instance) {
  *
  * @return array
  *   An array of field instance data arrays, representing a chain of configured
- *   entityreference fields from lowest to highest parent.
+ *   entityreference fields from highest to lowest parent.
  *
  */
 function erchain_get_parent_instances($instance, &$parents_instances = array()) {
@@ -177,7 +177,7 @@ function erchain_get_parent_instances($instance, &$parents_instances = array()) 
       //   - Each parent can target it's child's key to filter options when
       //     looping through the chain.
       $parent_instance['erchain_child'] = implode('__', array($instance['entity_type'], $instance['bundle'], $instance['field_name']));
-      array_push($parents_instances, $parent_instance);
+      array_unshift($parents_instances, $parent_instance);
       erchain_get_parent_instances($parent_instance, $parents_instances);
   }
 
@@ -228,11 +228,10 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
           'wrapper' => 'erchain-parent-wrapper-' . $context['delta'],
           'effect' => 'fade',
         ),
-        // The target_id element has 0 weight. So each new parent element in the
-        // chain should be lighter than the last.
-        '#weight' => $weight - 1,
+        '#weight' => $weight + 1,
       );
-      $weight --;
+      $weight++;
+
       $parent_id = implode('__', array($parent_element['#entity_type'], $parent_element['#bundle'], $parent_element['#field_name']));
       $element[$parent_id] = $parent_element;
 
