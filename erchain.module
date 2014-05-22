@@ -220,8 +220,8 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
 
     $weight = 0;
     foreach ($parents_instances as $parent_position => $parent_instance) {
-      // Add the parent field to the existing element.
-      $parent_element = erchain_get_parent_element($parent_instance);
+      // Get the parent element.
+      $parent_element = erchain_get_element($parent_instance);
       $parent_element += array(
         '#ajax' => array(
           'callback' => 'erchain_field_ui_field_edit_form_ajax_callback',
@@ -365,7 +365,7 @@ function erchain_filter_element_options($triggering, &$element) {
  *
  * @see field_ui_default_value_widget()
  */
-function erchain_get_parent_element($instance) {
+function erchain_get_element($instance) {
   $field = field_info_field($instance['field_name']);
 
   // Shortcut so we can just re-use field_ui_default_value_widget().
