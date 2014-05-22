@@ -242,6 +242,17 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
         $parent_element['#default_value'] = $faux_defaults[$parent_id];
       }
 
+      // Check access for, and filter options on, the parent - based on it's
+      // grandparent status and value.
+      if (isset($grandparent_instance)) {
+        $grandparent_id = implode('__', array($grandparent_instance['entity_type'], $grandparent_instance['bundle'], $grandparent_instance['field_name']));
+        $grandparent_element = $element[$grandparent_id];
+        // Temporarily stash the ER erchain_direction on the element for the
+        // query to filter the options properly.
+        $grandparent_element['#erchain_direction'] = $grandparent_instance['erchain_direction'];
+        erchain_element_access($grandparent_element, $parent_element);
+      }
+
       // AJAX trigger.
       if (isset($form_state['triggering_element'])) {
         // The parents array represents the element parents in the form. We
@@ -258,18 +269,7 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
         // default value based on form_state value (or check for one or the
         // other farther below).
         $values = $form_state['values'][$element['#field_name']][LANGUAGE_NONE][$context['delta']];
-        $parent_element['#default_value'] = $values[$parent_id];
-      }
-
-      // Check access for, and filter options on, the parent - based on it's
-      // grandparent status and value.
-      if (isset($grandparent_instance)) {
-        $grandparent_id = implode('__', array($grandparent_instance['entity_type'], $grandparent_instance['bundle'], $grandparent_instance['field_name']));
-        $grandparent_element = $element[$grandparent_id];
-        // Temporarily stash the ER erchain_direction on the element for the
-        // query to filter the options properly.
-        $grandparent_element['#erchain_direction'] = $grandparent_instance['erchain_direction'];
-        erchain_element_access($grandparent_element, $parent_element);
+        $parent_element['#default_value'] = in_array($values[$parent_id], array_keys($parent_element['#options'])) ? $values[$parent_id] : NULL;
       }
 
       // Add the parent field to the existing element.
