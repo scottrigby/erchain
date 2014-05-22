@@ -219,7 +219,7 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
     }
 
     $weight = 0;
-    foreach ($parents_instances as $parent_position => $parent_instance) {
+    foreach ($parents_instances as $parent_instance) {
       // Get the parent element.
       $parent_element = erchain_get_element($parent_instance);
       $parent_element += array(
