@@ -355,28 +355,6 @@ function erchain_filter_element_options($triggering, &$element) {
 }
 
 /**
- * Gets a field instance from an array of parent info.
- *
- * @param array $parent_info
- *   An associative array of information about the a parent Entityreference
- *   field element, containing:
- *   - entity_type: The entity type containing the parent field.
- *   - bundle: The bundle containing the parent field.
- *   - field_name: The parent field name.
- *   - erchain_direction: The entityreference erchain_direction. Can be:
- *     - referencing: Limit to entities referencing the parent selection.
- *     - referenced: Limit to entities referenced by the parent.
- *
- * @return array
- *   An array of field instance data.
- */
-function erchain_get_parent_instance($parent_info) {
-  extract($parent_info);
-  $field = field_info_field($field_name);
-  return field_info_instance($entity_type, $field_name, $bundle);
-}
-
-/**
  * Gets faux form element(s).
  *
  * @param array $instance
