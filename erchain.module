@@ -265,11 +265,12 @@ function erchain_field_widget_multiple_selects_form_alter(&$element, &$form_stat
         // Override default value on AJAX trigger.
         $element[$triggering_element_id]['#default_value'] = $triggered_value;
 
-        // Also (do we need to do this now, because we're unsetting access?) set
-        // default value based on form_state value (or check for one or the
-        // other farther below).
+        // We need to default value based on form_state value now, because we're
+        // basing access on default value in erchain_element_access().
         $values = $form_state['values'][$element['#field_name']][LANGUAGE_NONE][$context['delta']];
-        $parent_element['#default_value'] = in_array($values[$parent_id], array_keys($parent_element['#options'])) ? $values[$parent_id] : NULL;
+        // Get value regardless of widget. See erchain_get_element().
+        $value = isset($values[$parent_id][0]['target_id']) ? $values[$parent_id][0]['target_id'] : $values[$parent_id];
+        $parent_element['#default_value'] = in_array($value, array_keys($parent_element['#options'])) ? $value : NULL;
       }
 
       // Add the parent field to the existing element.
@@ -449,6 +450,12 @@ function erchain_get_element($instance) {
   // be used for selection not storage.
   $value_key = key($field['columns']);
   // The multiple_selects module always returns an array, regardless of
-  // cardinality.
-  return $element[$instance['field_name']][LANGUAGE_NONE][0][$value_key];
+  // cardinality. But if a parent field uses another widget, it may not.
+  // @todo Is there a more generic way to get this, regardless of widget?
+  if (isset($element[$instance['field_name']][LANGUAGE_NONE][0][$value_key])) {
+    return $element[$instance['field_name']][LANGUAGE_NONE][0][$value_key];
+  }
+  else {
+    return $element[$instance['field_name']][LANGUAGE_NONE];
+  }
 }
